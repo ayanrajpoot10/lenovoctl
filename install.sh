@@ -50,11 +50,6 @@ fi
 if [ -f "$EXTRACTED_DIR/lenovoctl.1" ]; then
     mkdir -p "$MAN_DIR"
     install -m 644 "$EXTRACTED_DIR/lenovoctl.1" "$MAN_DIR/lenovoctl.1"
-    if [ $? -eq 0 ]; then
-        if command -v mandb >/dev/null 2>&1; then
-            mandb -q
-        fi
-    fi
 fi
 
 rm -rf "$TMP_DIR"
