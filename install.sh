@@ -1,32 +1,37 @@
 #!/bin/bash
 
+REPO="ayanrajpoot10/lenovoctl"
+TAGS_API_URL="https://api.github.com/repos/${REPO}/tags"
+ARCHIVE_BASE_URL="https://github.com/${REPO}/archive/refs/tags"
+BIN_DIR="/usr/local/bin"
+MAN_DIR="/usr/local/share/man/man1"
+
 if [ "$EUID" -ne 0 ]; then
     echo "Root privileges required. Please use sudo."
     exit 1
 fi
 
-echo "Fetching latest version tag from GitHub..."
-LATEST_TAG=$(curl -s https://api.github.com/repos/ayanrajpoot10/lenovoctl/tags | grep '"name":' | head -n 1 | cut -d'"' -f4)
+LATEST_TAG=$(curl -s "$TAGS_API_URL" | grep '"name":' | head -n 1 | cut -d'"' -f4)
 
 if [ -z "$LATEST_TAG" ]; then
     echo "Error: Failed to fetch latest tag."
     exit 1
 fi
 
-TAR_URL="https://github.com/ayanrajpoot10/lenovoctl/archive/refs/tags/${LATEST_TAG}.tar.gz"
+VERSION=${LATEST_TAG#v}
+echo "Latest version: $VERSION"
+
+TAR_URL="${ARCHIVE_BASE_URL}/${LATEST_TAG}.tar.gz"
 TMP_DIR=$(mktemp -d)
 
-echo "Downloading $LATEST_TAG..."
 if ! curl -sL "$TAR_URL" -o "$TMP_DIR/lenovoctl.tar.gz"; then
     echo "Error: Failed to download archive."
     rm -rf "$TMP_DIR"
     exit 1
 fi
 
-echo "Extracting..."
 tar -xzf "$TMP_DIR/lenovoctl.tar.gz" -C "$TMP_DIR"
 
-VERSION=${LATEST_TAG#v}
 EXTRACTED_DIR="$TMP_DIR/lenovoctl-$VERSION"
 
 if [ ! -d "$EXTRACTED_DIR" ]; then
@@ -34,9 +39,6 @@ if [ ! -d "$EXTRACTED_DIR" ]; then
     rm -rf "$TMP_DIR"
     exit 1
 fi
-
-BIN_DIR="/usr/local/bin"
-MAN_DIR="/usr/local/share/man/man1"
 
 echo "Installing..."
 
