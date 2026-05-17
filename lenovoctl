@@ -1,0 +1,341 @@
+#!/bin/bash
+
+# lenovoctl - A CLI tool to control Lenovo laptop features on linux
+
+for d in /sys/bus/platform/devices/VPC2004:*; do
+    VPC="$d"
+    break
+done
+
+run_as_root() {
+    local cmd="$1"
+
+    if [ "$EUID" -ne 0 ]; then
+        echo "Root privileges required. Please use sudo."
+        exit 1
+    fi
+
+    sh -c "$cmd"
+    if [ $? -ne 0 ]; then
+        echo "Error: Command failed."
+        exit 1
+    fi
+}
+
+show_help() {
+    cat << EOF
+Usage: lenovoctl <command> [action]
+
+Commands:
+  fan          Control fan mode
+  conservation Control battery conservation mode
+  usb          Control always-on USB charging
+  fnlock       Control FN lock
+  camera       Control camera power
+  touchpad     Control touchpad state
+
+Run 'lenovoctl <command> --help' for more information on a command.
+EOF
+}
+
+cmd_fan() {
+    local action="$1"
+
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl fan <status|0|1|2|4>"
+        echo "  status : Show current fan mode"
+        echo "  0      : Super Silent"
+        echo "  1      : Standard"
+        echo "  2      : Dust Cleaning"
+        echo "  4      : Efficient Thermal Dissipation"
+        return
+    fi
+
+    if [ ! -f $VPC/fan_mode ]; then
+        echo "Fan mode control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        local status=$(cat $VPC/fan_mode)
+        case "$status" in
+            133|0) echo "Super Silent" ;;
+            1) echo "Standard" ;;
+            2) echo "Dust Cleaning" ;;
+            4) echo "Efficient Thermal Dissipation" ;;
+            *) echo "Unknown ($status)" ;;
+        esac
+        return
+    fi
+
+    if [ "$action" = "0" ] || [ "$action" = "1" ] || [ "$action" = "2" ] || [ "$action" = "4" ]; then
+        run_as_root "echo '$action' > $VPC/fan_mode"
+        echo "Fan mode updated."
+    else
+        echo "Invalid fan mode."
+        exit 1
+    fi
+}
+
+cmd_conservation() {
+    local action="$1"
+
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl conservation <status|on|off>"
+        echo "  status : Show current conservation mode"
+        echo "  on     : Enable conservation mode (Long_Life / Conservation)"
+        echo "  off    : Disable conservation mode (Standard / Normal charging)"
+        return
+    fi
+
+    local legacy_mode=true
+    if [ -f /sys/class/power_supply/BAT0/charge_type ] || [ -f /sys/class/power_supply/BAT0/charge_types ] || [ -f /sys/class/power_supply/BAT1/charge_type ] || [ -f /sys/class/power_supply/BAT1/charge_types ]; then
+        legacy_mode=false
+        local bat_path="/sys/class/power_supply/BAT0"
+        if [ ! -d "$bat_path" ]; then
+            bat_path="/sys/class/power_supply/BAT1"
+        fi
+        
+        local charge_file="charge_types"
+        if [ ! -f "$bat_path/charge_types" ]; then
+            charge_file="charge_type"
+        fi
+    fi
+
+    if [ "$legacy_mode" = true ] && [ ! -f $VPC/conservation_mode ]; then
+        echo "Conservation mode control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        if [ "$legacy_mode" = false ]; then
+            local status=$(cat "$bat_path/$charge_file" | grep -o '\[.*\]' | tr -d '[]')
+            if [ -z "$status" ]; then
+                status=$(cat "$bat_path/$charge_file")
+            fi
+            
+            if [ "$status" = "Long_Life" ] || [ "$status" = "conservation" ] || [ "$status" = "Conservation" ]; then
+                echo "Conservation mode is ON"
+            else
+                echo "Conservation mode is OFF (Current: $status)"
+            fi
+            return
+        else
+            local status=$(cat $VPC/conservation_mode)
+            if [ "$status" = "1" ]; then
+                echo "Conservation mode is ON"
+            else
+                echo "Conservation mode is OFF"
+            fi
+            return
+        fi
+    fi
+
+    if [ "$action" = "on" ]; then
+        if [ "$legacy_mode" = false ]; then
+            run_as_root "echo 'Long_Life' > $bat_path/$charge_file"
+        else
+            run_as_root "echo '1' > $VPC/conservation_mode"
+        fi
+        echo "Conservation mode enabled."
+        elif [ "$action" = "off" ]; then
+        if [ "$legacy_mode" = false ]; then
+            run_as_root "echo 'Standard' > $bat_path/$charge_file"
+        else
+            run_as_root "echo '0' > $VPC/conservation_mode"
+        fi
+        echo "Conservation mode disabled."
+    else
+        echo "Invalid action."
+        exit 1
+    fi
+}
+
+cmd_usb() {
+    local action="$1"
+
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl usb <status|on|off>"
+        echo "  status : Show current always-on USB status"
+        echo "  on     : Enable always-on USB"
+        echo "  off    : Disable always-on USB"
+        return
+    fi
+
+    if [ ! -f $VPC/usb_charging ]; then
+        echo "Always-on USB control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        local status=$(cat $VPC/usb_charging)
+        if [ "$status" = "1" ]; then
+            echo "Always-on USB is ON"
+        else
+            echo "Always-on USB is OFF"
+        fi
+        return
+    fi
+
+    if [ "$action" = "on" ]; then
+        run_as_root "echo '1' > $VPC/usb_charging"
+        echo "Always-on USB enabled."
+    elif [ "$action" = "off" ]; then
+        run_as_root "echo '0' > $VPC/usb_charging"
+        echo "Always-on USB disabled."
+    else
+        echo "Invalid action."
+        exit 1
+    fi
+}
+
+cmd_fnlock() {
+    local action="$1"
+
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl fnlock <status|on|off>"
+        echo "  status : Show current FN lock status"
+        echo "  on     : Enable FN lock"
+        echo "  off    : Disable FN lock"
+        return
+    fi
+
+    if [ ! -f $VPC/fn_lock ]; then
+        echo "FN lock control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        local status=$(cat $VPC/fn_lock)
+        if [ "$status" = "1" ]; then
+            echo "FN lock is ON"
+        else
+            echo "FN lock is OFF"
+        fi
+        return
+    fi
+
+    if [ "$action" = "on" ]; then
+        run_as_root "echo '1' > $VPC/fn_lock"
+        echo "FN lock enabled."
+    elif [ "$action" = "off" ]; then
+        run_as_root "echo '0' > $VPC/fn_lock"
+        echo "FN lock disabled."
+    else
+        echo "Invalid action."
+        exit 1
+    fi
+}
+
+cmd_camera() {
+    local action="$1"
+    
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl camera <status|on|off>"
+        echo "  status : Show current camera power status"
+        echo "  on     : Enable camera power"
+        echo "  off    : Disable camera power"
+        return
+    fi
+
+    if [ ! -f $VPC/camera_power ]; then
+        echo "Camera power control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        local status=$(cat $VPC/camera_power)
+        if [ "$status" = "1" ]; then
+            echo "Camera is ON"
+        else
+            echo "Camera is OFF"
+        fi
+        return
+    fi
+
+    if [ "$action" = "on" ]; then
+        run_as_root "echo '1' > $VPC/camera_power"
+        echo "Camera powered on."
+    elif [ "$action" = "off" ]; then
+        run_as_root "echo '0' > $VPC/camera_power"
+        echo "Camera powered off."
+    else
+        echo "Invalid action."
+        exit 1
+    fi
+}
+
+cmd_touchpad() {
+    local action="$1"
+    
+    if [ "$action" = "-h" ] || [ "$action" = "--help" ] || [ "$action" = "help" ] || [ -z "$action" ]; then
+        echo "Usage: lenovoctl touchpad <status|on|off>"
+        echo "  status : Show current touchpad status"
+        echo "  on     : Enable touchpad"
+        echo "  off    : Disable touchpad"
+        return
+    fi
+
+    if [ ! -f $VPC/touchpad ]; then
+        echo "Touchpad control not supported on this device."
+        return 1
+    fi
+
+    if [ "$action" = "status" ]; then
+        local status=$(cat $VPC/touchpad)
+        if [ "$status" = "1" ]; then
+            echo "Touchpad is ON"
+        else
+            echo "Touchpad is OFF"
+        fi
+        return
+    fi
+
+    if [ "$action" = "on" ]; then
+        run_as_root "echo '1' > $VPC/touchpad"
+        echo "Touchpad enabled."
+    elif [ "$action" = "off" ]; then
+        run_as_root "echo '0' > $VPC/touchpad"
+        echo "Touchpad disabled."
+    else
+        echo "Invalid action."
+        exit 1
+    fi
+}
+
+if [ $# -eq 0 ]; then
+    show_help
+    exit 1
+fi
+
+command="$1"
+shift
+
+case "$command" in
+    fan)
+        cmd_fan "$1"
+        ;;
+    conservation)
+        cmd_conservation "$1"
+        ;;
+    usb)
+        cmd_usb "$1"
+        ;;
+    fnlock)
+        cmd_fnlock "$1"
+        ;;
+    camera)
+        cmd_camera "$1"
+        ;;
+    touchpad)
+        cmd_touchpad "$1"
+        ;;
+    -h|--help|help)
+        show_help
+        ;;
+    *)
+        echo "Error: Unknown command '$command'"
+        show_help
+        exit 1
+        ;;
+esac

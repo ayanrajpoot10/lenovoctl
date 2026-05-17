@@ -1,0 +1,35 @@
+.\" Man page for lenovoctl
+.TH lenovoctl 1 "[17 May 2026]" "lenovoctl 1.0"
+.SH NAME
+lenovoctl \- A CLI tool to control Lenovo laptop features
+.SH SYNOPSIS
+.B lenovoctl
+.I command
+.I action
+.SH DESCRIPTION
+.B lenovoctl
+is a simple CLI utility to toggle hardware features on Lenovo laptops. Changing states requires
+.BR sudo (8).
+.SH COMMANDS
+.TP
+.B conservation <status|on|off>
+Control battery conservation mode.
+.TP
+.B fan <status|0|1|2|4>
+Control fan mode (0: Silent, 1: Standard, 2: Dust, 4: Efficient).
+.TP
+.B usb <status|on|off>
+Control always-on USB charging.
+.TP
+.B fnlock <status|on|off>
+Control the Function (Fn) key lock.
+.TP
+.B camera <status|on|off>
+Control power to the built-in webcam.
+.TP
+.B touchpad <status|on|off>
+Control the internal touchpad state.
+.SH AUTHOR
+Written by Ayan Rajpoot <ayanrajpoot2004@gmail.com>
+.SH SEE ALSO
+.BR sudo (8)
